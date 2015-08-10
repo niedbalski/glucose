@@ -23,7 +23,7 @@ class Plot(object):
             self.width = self.DEFAULT_WIDTH
 
     def get_canvas(self):
-        self.render()
         canvas = FigureCanvas(self.figure)
+        setattr(canvas, 'plot', self)
         canvas.set_size_request(self.height, self.width)
         return canvas

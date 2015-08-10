@@ -12,8 +12,7 @@ class AverageReadings(Plot):
     def __init__(self, *args, **kwargs):
         Plot.__init__(self, *args, **kwargs)
 
-    def render(self):
-        (total, low, normal, high) = Reading.group_by_range()
+        (total, low, normal, high) = self.get_data()
 
         if not total:
             raise NoPlotDataFound()
@@ -35,3 +34,27 @@ class AverageReadings(Plot):
 
         ax.set_title(self.title)
         ax.plot()
+
+        self.ax = ax
+
+    def refresh(self):
+        (total, low, normal, high) = self.get_data()
+
+        self.ax.clear()
+        self.ax.pie([low, high, normal],
+                    labels=[format_as_percent(low, total, 'Lows {}',
+                                              low),
+                            format_as_percent(high, total, 'Highs {}',
+                                              high),
+                            format_as_percent(normal,
+                                              total, 'Normal {}',
+                                              normal)],
+
+                    colors=['orange', 'red', 'green'], shadow=True,
+                    explode=(0, 0, 0.2))
+
+        self.ax.set_title(self.title)
+        self.figure.canvas.draw_idle()
+
+    def get_data(self):
+        return Reading.group_by_range()

@@ -5,7 +5,7 @@ import datetime
 import logging
 
 from glucose.model import Reading, Category
-from glucose.plots.loader import load_plots, close_plot
+from glucose.plots.loader import load_plots
 
 from glucose import helpers
 
@@ -36,7 +36,7 @@ class Readings(object):
          "transform": lambda d: d.strftime("%Y-%m-%d")},
         {"display_name": "Time", "field": "created",
          "transform": lambda t: t.strftime("%H:%M")},
-        {"display_name": "Notes", "field": "notes"},
+        {"display_name": "Notes", "field": "notes"}
     ]
 
     def __init__(self, view):
@@ -93,22 +93,25 @@ class Plots(object):
         childs = self.view.get_children()
         page = self.view.get_current_page()
 
+        if page in (-1, ):
+            page = 0
+
         if len(childs):
             for child in childs:
                 viewport = child.get_children()[0]
-                for plot in viewport.get_children():
-                    if not isinstance(plot, Gtk.Label):
-                        close_plot(plot)
-                self.view.remove(child)
+                for canvas in viewport.get_children():
+                    if not isinstance(canvas, Gtk.Label):
+                        canvas.plot.refresh()
+        else:
+            for plot in load_plots():
+                scrolled = Gtk.ScrolledWindow()
+                try:
+                    canvas = plot.get_canvas()
+                except:
+                    canvas = Gtk.Label("No Data found to Plot")
 
-        for plot in load_plots():
-            scrolled = Gtk.ScrolledWindow()
-            try:
-                canvas = plot.get_canvas()
-            except:
-                canvas = Gtk.Label("No Data found")
-            scrolled.add_with_viewport(canvas)
-            self.view.append_page(scrolled, Gtk.Label(plot.title))
+                scrolled.add_with_viewport(canvas)
+                self.view.append_page(scrolled, Gtk.Label(plot.title))
 
         self.view.show_all()
         self.view.set_current_page(page)
@@ -142,6 +145,55 @@ class Stats(object):
         helpers.set_numeric_label(self.view, "normal_label", normal_c, total)
 
 
+class ReadingDetails(GObject.GObject):
+    __gsignals__ = {
+        'details-ready': (GObject.SIGNAL_RUN_LAST, GObject.TYPE_NONE,
+                          (GObject.TYPE_PYOBJECT, )),
+    }
+
+    def __init__(self, view):
+        GObject.GObject.__init__(self)
+
+        self.view = view
+        self.window = self.view.get_object("new_reading")
+        self.date = self.view.get_object("new_reading_date")
+        self.hour = self.view.get_object("new_reading_hour")
+        self.minutes = self.view.get_object("new_reading_minute")
+        self.notes = self.view.get_object("new_reading_notes")
+        self.save_btn = self.view.get_object("new_reading_save")
+        self.cancel_btn = self.view.get_object("new_reading_cancel")
+
+    def show(self, reading):
+        now = datetime.datetime.now()
+        self.hour.set_value(now.hour)
+        self.minutes.set_value(now.minute)
+        self.date.select_day(now.day)
+        self.date.select_month(now.month-1, now.year)
+        self.save_btn.connect("clicked", self.on_save_clicked, reading)
+        self.cancel_btn.connect("clicked", self.on_cancel_clicked, reading)
+        self.view.get_object("new_reading").show_all()
+
+    def on_save_clicked(self, widget, reading):
+        (year, month, day) = self.date.get_date()
+        formatted = "%d/%d/%d %d:%d:00" % (year, month, day,
+                                           self.hour.get_value(),
+                                           self.minutes.get_value())
+
+        created = datetime.datetime.strptime(formatted, "%Y/%m/%d %H:%M:%S")
+        reading.created = created
+
+        buffer = self.notes.get_buffer()
+        reading.notes = buffer.get_text(buffer.get_start_iter(),
+                                        buffer.get_end_iter(), True)
+        reading.save()
+
+        self.emit('details-ready', Reading.select())
+        self.window.hide()
+
+    def on_cancel_clicked(self, widget, *args):
+        self.window.hide()
+
+
 class QuickAdd(GObject.GObject):
 
     __gsignals__ = {
@@ -152,7 +204,6 @@ class QuickAdd(GObject.GObject):
     def __init__(self, view):
         GObject.GObject.__init__(self)
         self.view = view
-
         self.add_btn = self.view.get_object("quick_add_btn")
         self.value = self.view.get_object("quick_add_value")
 
@@ -171,7 +222,6 @@ class QuickAdd(GObject.GObject):
 
         self.categories_combo.set_model(category_store)
         self.categories_combo.set_active(0)
-
         self.signals()
 
     def signals(self):
@@ -188,14 +238,13 @@ class QuickAdd(GObject.GObject):
         model = self.categories_combo.get_model()
         row_id, name = model[tree_iter][:2]
 
-        reading = Reading(value=float(value),
-                          created=datetime.datetime.now(),
-                          category=Category.get(name=name))
-        reading.save()
-        self.emit('reading-added', Reading.select())
+        self.emit("reading-added", Reading(
+            value=float(value),
+            category=Category.get(name=name)))
 
 
 GObject.type_register(QuickAdd)
+GObject.type_register(ReadingDetails)
 
 
 class GlucoseAppSignals(object):
@@ -210,7 +259,6 @@ class GlucoseAppSignals(object):
 class GlucoseApp(object):
 
     builder_file = os.path.join(_HERE, 'ui', 'ui.glade')
-
 
     def __init__(self):
         self.builder = Gtk.Builder()
@@ -231,11 +279,14 @@ class GlucoseApp(object):
         self.main.show_all()
         Gtk.main()
 
-    def on_reading_added(self, widget, readings):
-        #self.builder.get_object('new_reading').show()
+    def on_reading_added(self, widget, reading):
+        self.reading_details.connect('details-ready',
+                                     self.on_reading_details_ready)
+        self.reading_details.show(reading)
+
+    def on_reading_details_ready(self, widget, readings):
         self.readings_treeview.show(readings)
         self.stats.show()
-
         self.plots.show()
 
     def quit_now(self, signum, frame):
@@ -258,6 +309,15 @@ class GlucoseApp(object):
             self._stats = Stats(
                 self.builder)
         return self._stats
+
+    @property
+    def reading_details(self):
+        try:
+            getattr(self, '_reading_details')
+        except AttributeError:
+            self._reading_details = ReadingDetails(
+                self.builder)
+        return self._reading_details
 
     @property
     def quick_add(self):

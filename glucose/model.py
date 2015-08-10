@@ -47,9 +47,10 @@ class Reading(BaseModel):
     DEFAULT_NORMAL_VALUE = (DEFAULT_NORMAL_VALUE_LOW,
                             DEFAULT_NORMAL_VALUE_HIGH)
 
-    created = DateTimeField(unique=True, default=datetime.datetime.now())
+    created = DateTimeField(default=datetime.datetime.now())
     value = FloatField(default=0)
     category = ForeignKeyField(Category, related_name='readings')
+    notes = TextField()
 
     class Meta:
         order_by = ('-created',)
