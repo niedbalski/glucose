@@ -97,24 +97,29 @@ class Reading(BaseModel):
     def group_by_range(cls, from_date=None):
         (range_l, range_h) = cls.get_normal_range()
 
-        low = Reading.select().where(Reading.value < range_l)
-
         if from_date:
-            low.where(Reading.created >= from_date)
+            low = Reading.select().where(Reading.value < range_l).where(
+                Reading.created >= from_date)
+        else:
+            low = Reading.select().where(Reading.value < range_l)
 
         low = low.count()
 
-        normal = Reading.select().where(
-            Reading.value >= range_l, Reading.value <= range_h)
-
         if from_date:
-            normal.where(Reading.created >= from_date)
+            normal = Reading.select().where(
+                Reading.value >= range_l, Reading.value <= range_h).where(
+                    Reading.created >= from_date)
+        else:
+            normal = Reading.select().where(Reading.value >= range_l,
+                                            Reading.value <= range_h)
 
         normal = normal.count()
 
-        high = Reading.select().where(Reading.value > range_h)
         if from_date:
-            high.where(Reading.created >= from_date)
+            high = Reading.select().where(Reading.value > range_h).where(
+                Reading.created >= from_date)
+        else:
+            high = Reading.select().where(Reading.value > range_h)
 
         high = high.count()
 

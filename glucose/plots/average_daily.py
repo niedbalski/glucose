@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from glucose.plots.base import Plot, NoPlotDataFound
+from glucose.plots.base import Plot
 from glucose.model import Reading
 
 from matplotlib.dates import DateFormatter

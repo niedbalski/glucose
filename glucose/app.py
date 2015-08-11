@@ -138,7 +138,6 @@ class Stats(object):
         self.view = view
 
     def show(self, from_date=None):
-
         (low, avg, high) = Reading.get_min_avg_max(from_date=from_date)
         (total, low_c, normal_c, high_c) = Reading.group_by_range(
             from_date=from_date)
@@ -180,17 +179,21 @@ class ReadingDetails(GObject.GObject):
         self.save_btn = self.view.get_object("new_reading_save")
         self.cancel_btn = self.view.get_object("new_reading_cancel")
 
-    def show(self, reading):
+    def show(self, reading, from_date=None):
         now = datetime.datetime.now()
+
         self.hour.set_value(now.hour)
         self.minutes.set_value(now.minute)
         self.date.select_day(now.day)
-        self.date.select_month(now.month-1, now.year)
-        self.save_btn.connect("clicked", self.on_save_clicked, reading)
+        self.date.select_month(now.month, now.year)
+
+        self.save_btn.connect("clicked", self.on_save_clicked, reading,
+                              from_date)
         self.cancel_btn.connect("clicked", self.on_cancel_clicked, reading)
+
         self.view.get_object("new_reading").show_all()
 
-    def on_save_clicked(self, widget, reading):
+    def on_save_clicked(self, widget, reading, from_date):
         (year, month, day) = self.date.get_date()
         formatted = "%d/%d/%d %d:%d:00" % (year, month, day,
                                            self.hour.get_value(),
@@ -204,7 +207,12 @@ class ReadingDetails(GObject.GObject):
                                         buffer.get_end_iter(), True)
         reading.save()
 
-        self.emit('details-ready', Reading.select())
+        if from_date:
+            readings = Reading.select().where(Reading.created >= from_date)
+        else:
+            readings = Reading.select()
+
+        self.emit('details-ready', readings)
         self.window.hide()
 
     def on_cancel_clicked(self, widget, *args):
@@ -283,14 +291,13 @@ class GlucoseApp(object):
         self.builder.connect_signals(GlucoseAppSignals(self))
 
     def show(self, from_date=None):
-
         self.readings.show(from_date=from_date)
         self.stats.show(from_date=from_date)
         self.plots.show(from_date=from_date)
 
-        self.quick_add.connect('reading-added', self.on_reading_added)
+        self.quick_add.connect('reading-added', self.on_reading_added,
+                               from_date)
         self.quick_add.show()
-
         self.time_interval.connect('changed', self.on_time_interval_changed)
         self.main.show_all()
 
@@ -317,16 +324,16 @@ class GlucoseApp(object):
 
         self.show(from_date=interval)
 
-    def on_reading_added(self, widget, reading):
+    def on_reading_added(self, widget, reading, from_date):
         self.reading_details.connect('details-ready',
-                                     self.on_reading_details_ready)
+                                     self.on_reading_details_ready,
+                                     from_date)
         self.reading_details.show(reading)
 
-    def on_reading_details_ready(self, widget, readings):
-        self.readings.show(readings)
-
-        self.stats.show()
-        self.plots.show()
+    def on_reading_details_ready(self, widget, readings, from_date):
+        self.readings.show(from_date=from_date)
+        self.stats.show(from_date=from_date)
+        self.plots.show(from_date=from_date)
 
     def quit_now(self, signum, frame):
         Gtk.main_quit()
