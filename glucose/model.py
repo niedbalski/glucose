@@ -56,12 +56,20 @@ class Reading(BaseModel):
         order_by = ('-created',)
 
     @classmethod
-    def get_min_avg_max(cls, format=None):
-        return Reading.select(
-            fn.Min(Reading.value),
-            fn.Avg(Reading.value),
-            fn.Max(Reading.value)
-        ).scalar(as_tuple=True)
+    def get_min_avg_max(cls, from_date=None):
+        if from_date:
+            return Reading.select(
+                fn.Min(Reading.value),
+                fn.Avg(Reading.value),
+                fn.Max(Reading.value)
+            ).where(Reading.created >= from_date).scalar(
+                as_tuple=True)
+        else:
+            return Reading.select(
+                fn.Min(Reading.value),
+                fn.Avg(Reading.value),
+                fn.Max(Reading.value)
+            ).scalar(as_tuple=True)
 
     @classmethod
     def get_normal_range(cls):
@@ -73,26 +81,49 @@ class Reading(BaseModel):
         return map(lambda x: float(x), setting.value.split(","))
 
     @classmethod
-    def group_by_day(cls):
+    def group_by_day(cls, from_date=None):
         day = fn.DATE_TRUNC('day', Reading.created)
-        return Reading.select(day.alias("day"),
-                              fn.Avg(Reading.value).alias("avg")).group_by(
-                                  day).order_by(day)
+        if from_date:
+            return Reading.select(day.alias("day"),
+                                  fn.Avg(Reading.value).alias("avg")).where(
+                                      Reading.created >= from_date).group_by(
+                                          day).order_by(day)
+        else:
+            return Reading.select(day.alias("day"),
+                                  fn.Avg(Reading.value).alias("avg")).group_by(
+                                      day).order_by(day)
 
     @classmethod
-    def group_by_range(cls):
+    def group_by_range(cls, from_date=None):
         (range_l, range_h) = cls.get_normal_range()
 
-        low = Reading.select().where(
-            Reading.value < range_l).count()
+        low = Reading.select().where(Reading.value < range_l)
 
-        high = Reading.select().where(
-            Reading.value > range_h).count()
+        if from_date:
+            low.where(Reading.created >= from_date)
+
+        low = low.count()
 
         normal = Reading.select().where(
-            Reading.value >= range_l, Reading.value <= range_h).count()
+            Reading.value >= range_l, Reading.value <= range_h)
 
-        return Reading.select().count(), low, normal, high
+        if from_date:
+            normal.where(Reading.created >= from_date)
+
+        normal = normal.count()
+
+        high = Reading.select().where(Reading.value > range_h)
+        if from_date:
+            high.where(Reading.created >= from_date)
+
+        high = high.count()
+
+        counter = Reading.select()
+        if from_date:
+            counter.where(Reading.created >= from_date)
+
+        counter = counter.count()
+        return counter, low, normal, high
 
     @classmethod
     def format_value(cls, value):

@@ -27,16 +27,24 @@ logger = logging.getLogger(__name__)
 class Readings(object):
     COLUMNS = [
         {
-            "display_name": "Value", "field": "value", "transform":
-            Reading.format_value
+            "display_name": "Value", "field": "value",
+            "transform": Reading.format_value
         },
-        {"display_name": "Category", "field": "category",
-         "transform": lambda c: c.name},
-        {"display_name": "Date", "field": "created",
-         "transform": lambda d: d.strftime("%Y-%m-%d")},
-        {"display_name": "Time", "field": "created",
-         "transform": lambda t: t.strftime("%H:%M")},
-        {"display_name": "Notes", "field": "notes"}
+        {
+            "display_name": "Category", "field": "category",
+            "transform": lambda c: c.name
+        },
+        {
+            "display_name": "Date", "field": "created",
+            "transform": lambda d: d.strftime("%Y-%m-%d")
+        },
+        {
+            "display_name": "Time", "field": "created",
+            "transform": lambda t: t.strftime("%H:%M")
+        },
+        {
+            "display_name": "Notes", "field": "notes"
+        }
     ]
 
     def __init__(self, view):
@@ -64,9 +72,15 @@ class Readings(object):
 
             self.view.append_column(column)
 
-    def show(self, readings):
+    def show(self, from_date=None):
         model = Gtk.ListStore(*([i.get("type", str)
                                  for i in self.COLUMNS] + [object]))
+
+        if from_date:
+            readings = Reading.select().where(Reading.created >= from_date)
+        else:
+            readings = Reading.select()
+
         for reading in readings:
             row = []
             for item in self.COLUMNS:
@@ -89,7 +103,8 @@ class Plots(object):
     def __init__(self, view):
         self.view = view
 
-    def show(self):
+    def show(self, from_date=None):
+
         childs = self.view.get_children()
         page = self.view.get_current_page()
 
@@ -101,9 +116,9 @@ class Plots(object):
                 viewport = child.get_children()[0]
                 for canvas in viewport.get_children():
                     if not isinstance(canvas, Gtk.Label):
-                        canvas.plot.refresh()
+                        canvas.plot.refresh(from_date=from_date)
         else:
-            for plot in load_plots():
+            for plot in load_plots(from_date=from_date):
                 scrolled = Gtk.ScrolledWindow()
                 try:
                     canvas = plot.get_canvas()
@@ -122,9 +137,11 @@ class Stats(object):
     def __init__(self, view):
         self.view = view
 
-    def show(self):
-        (low, avg, high) = Reading.get_min_avg_max()
-        (total, low_c, normal_c, high_c) = Reading.group_by_range()
+    def show(self, from_date=None):
+
+        (low, avg, high) = Reading.get_min_avg_max(from_date=from_date)
+        (total, low_c, normal_c, high_c) = Reading.group_by_range(
+            from_date=from_date)
 
         try:
             latest = Reading.get().value
@@ -265,19 +282,40 @@ class GlucoseApp(object):
         self.builder.add_from_file(self.builder_file)
         self.builder.connect_signals(GlucoseAppSignals(self))
 
-        self.readings = Reading.select()
+    def show(self, from_date=None):
 
-    def show(self):
-        self.readings_treeview.show(self.readings)
-
-        self.stats.show()
-        self.plots.show()
+        self.readings.show(from_date=from_date)
+        self.stats.show(from_date=from_date)
+        self.plots.show(from_date=from_date)
 
         self.quick_add.connect('reading-added', self.on_reading_added)
         self.quick_add.show()
 
+        self.time_interval.connect('changed', self.on_time_interval_changed)
         self.main.show_all()
+
         Gtk.main()
+
+    def on_time_interval_changed(self, widget):
+        tree_iter = widget.get_active_iter()
+
+        if not tree_iter:
+            return
+
+        model = widget.get_model()
+        row_id, name = model[tree_iter][:2]
+
+        interval = datetime.datetime.now()
+        if name == "Last Day":
+            interval += datetime.timedelta(days=-1)
+        elif name == "Last Week":
+            interval += datetime.timedelta(weeks=-1)
+        elif name == "Last Momth":
+            interval += datetime.timedelta(months=-1)
+        else:
+            interval = None
+
+        self.show(from_date=interval)
 
     def on_reading_added(self, widget, reading):
         self.reading_details.connect('details-ready',
@@ -285,12 +323,35 @@ class GlucoseApp(object):
         self.reading_details.show(reading)
 
     def on_reading_details_ready(self, widget, readings):
-        self.readings_treeview.show(readings)
+        self.readings.show(readings)
+
         self.stats.show()
         self.plots.show()
 
     def quit_now(self, signum, frame):
         Gtk.main_quit()
+
+    @property
+    def time_interval(self):
+        try:
+            return getattr(self, '_time_interval')
+        except AttributeError:
+            self._time_interval = self.builder.get_object("time_interval")
+
+        intervals = Gtk.ListStore(str, str)
+
+        for interval in ("All", "Last Day",
+                         "Last Week", "Last Month", ):
+            intervals.append([interval, interval])
+
+        model = self.time_interval.get_model()
+        if model is not None:
+            model.clear()
+
+        self._time_interval.set_model(intervals)
+        self._time_interval.set_active(0)
+
+        return self._time_interval
 
     @property
     def plots(self):
@@ -329,7 +390,7 @@ class GlucoseApp(object):
         return self._quick_add
 
     @property
-    def readings_treeview(self):
+    def readings(self):
         try:
             getattr(self, '_readings')
         except AttributeError:

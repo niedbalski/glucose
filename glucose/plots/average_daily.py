@@ -13,10 +13,10 @@ class AverageReadingsDaily(Plot):
 
     title = "Average Glucose Readings Daily"
 
-    def __init__(self, *args, **kwargs):
-        Plot.__init__(self, *args, **kwargs)
+    def __init__(self, from_date=None):
+        Plot.__init__(self)
 
-        values, days = self.get_data()
+        values, days = self.get_data(from_date=from_date)
 
         self.figure, ax = plt.subplots()
         self.lines, = ax.plot(days, values)
@@ -38,8 +38,8 @@ class AverageReadingsDaily(Plot):
         self.figure.autofmt_xdate()
         self.ax = ax
 
-    def refresh(self):
-        values, days = self.get_data()
+    def refresh(self, from_date=None):
+        values, days = self.get_data(from_date=from_date)
 
         self.ax.clear()
         self.ax.plot(days, values)
@@ -50,15 +50,14 @@ class AverageReadingsDaily(Plot):
         self.ax.set_title(self.title)
         self.ax.set_xlabel('Day')
         self.ax.set_ylabel('Average')
+
         self.figure.canvas.draw_idle()
 
-    def get_data(self):
-        grouped_readings = Reading.group_by_day()
+    def get_data(self, from_date=None):
+        grouped_readings = Reading.group_by_day(from_date=from_date)
+
         x = [x.avg for x in grouped_readings]
         y = [datetime.datetime.strptime(
             y.day, '%Y-%m-%d') for y in grouped_readings]
-
-        if not len(x) and len(y):
-            raise NoPlotDataFound()
 
         return x, y
