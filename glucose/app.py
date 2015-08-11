@@ -167,6 +167,8 @@ class ReadingDetails(GObject.GObject):
                           (GObject.TYPE_PYOBJECT, )),
     }
 
+    handler_id = None
+
     def __init__(self, view):
         GObject.GObject.__init__(self)
 
@@ -187,14 +189,20 @@ class ReadingDetails(GObject.GObject):
         self.date.select_day(now.day)
         self.date.select_month(now.month, now.year)
 
-        self.save_btn.connect("clicked", self.on_save_clicked, reading,
-                              from_date)
+        if self.handler_id:
+            self.save_btn.disconnect(self.handler_id)
+
+        self.handler_id = self.save_btn.connect("clicked",
+                                                self.on_save_clicked, reading,
+                                                from_date)
+
         self.cancel_btn.connect("clicked", self.on_cancel_clicked, reading)
 
         self.view.get_object("new_reading").show_all()
 
     def on_save_clicked(self, widget, reading, from_date):
         (year, month, day) = self.date.get_date()
+
         formatted = "%d/%d/%d %d:%d:00" % (year, month, day,
                                            self.hour.get_value(),
                                            self.minutes.get_value())
